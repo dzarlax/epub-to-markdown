@@ -143,6 +143,13 @@
             font-size: 0.9em;
         }
 
+        .conversion-direction {
+            color: #667eea;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
         .flash-messages {
             margin-bottom: 20px;
         }
@@ -220,8 +227,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📚 EPUB → Markdown</h1>
-            <p>Конвертируйте ваши EPUB книги в чистый Markdown формат</p>
+            <h1>📚 EPUB ⇄ Markdown</h1>
+            <p>Конвертируйте EPUB в Markdown и обратно</p>
         </div>
 
         {% with messages = get_flashed_messages() %}
@@ -237,18 +244,19 @@
         <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
             <div class="upload-area" id="upload-area">
                 <div class="upload-icon">📁</div>
-                <div class="upload-text">Перетащите EPUB файл сюда</div>
-                <div class="upload-subtext">или нажмите для выбора файла</div>
-                <input type="file" id="file-input" name="file" accept=".epub" required>
+                <div class="upload-text">Перетащите файл сюда</div>
+                <div class="upload-subtext">EPUB, Markdown (.md), или текстовый файл (.txt)</div>
+                <input type="file" id="file-input" name="file" accept=".epub,.md,.markdown,.txt" required>
             </div>
 
             <div class="file-info" id="file-info">
                 <div class="file-name" id="file-name"></div>
                 <div class="file-size" id="file-size"></div>
+                <div class="conversion-direction" id="conversion-direction"></div>
             </div>
 
             <button type="submit" class="btn" id="submit-btn" disabled>
-                Конвертировать в Markdown
+                Конвертировать файл
             </button>
 
             <div class="loading" id="loading">
@@ -258,13 +266,13 @@
         </form>
 
         <div class="features">
-            <h3>Что делает конвертер:</h3>
+            <h3>Поддерживаемые конвертации:</h3>
             <ul class="feature-list">
-                <li>Сохраняет структуру и форматирование текста</li>
-                <li>Удаляет изображения и медиа-контент</li>
-                <li>Очищает специфические HTML теги</li>
-                <li>Создает чистый Markdown для чтения</li>
-                <li>Сохраняет метаданные книги</li>
+                <li>📚 EPUB → 📝 Markdown (сохраняет структуру, удаляет изображения)</li>
+                <li>📝 Markdown → 📚 EPUB (создает главы по заголовкам)</li>
+                <li>📄 TXT → 📚 EPUB (простой текст в книгу)</li>
+                <li>Автоматическое определение направления конвертации</li>
+                <li>Сохранение метаданных (название, автор)</li>
             </ul>
         </div>
     </div>
@@ -275,6 +283,7 @@
         const fileInfo = document.getElementById('file-info');
         const fileName = document.getElementById('file-name');
         const fileSize = document.getElementById('file-size');
+        const conversionDirection = document.getElementById('conversion-direction');
         const submitBtn = document.getElementById('submit-btn');
         const uploadForm = document.getElementById('upload-form');
         const loading = document.getElementById('loading');
@@ -308,16 +317,32 @@
             }
         });
 
+        function getConversionDirection(filename) {
+            const ext = filename.toLowerCase().split('.').pop();
+            switch(ext) {
+                case 'epub':
+                    return '📚 EPUB → 📝 Markdown';
+                case 'md':
+                case 'markdown':
+                    return '📝 Markdown → 📚 EPUB';
+                case 'txt':
+                    return '📄 TXT → 📚 EPUB';
+                default:
+                    return 'Неизвестный формат';
+            }
+        }
+
         function handleFileSelect() {
             const file = fileInput.files[0];
             if (file) {
-                if (file.name.toLowerCase().endsWith('.epub')) {
+                if (file.name.toLowerCase().endsWith('.epub') || file.name.toLowerCase().endsWith('.md') || file.name.toLowerCase().endsWith('.markdown') || file.name.toLowerCase().endsWith('.txt')) {
                     fileName.textContent = file.name;
                     fileSize.textContent = formatFileSize(file.size);
+                    conversionDirection.textContent = getConversionDirection(file.name);
                     fileInfo.classList.add('show');
                     submitBtn.disabled = false;
                 } else {
-                    alert('Пожалуйста, выберите EPUB файл');
+                    alert('Пожалуйста, выберите EPUB, Markdown, или текстовый файл');
                     fileInput.value = '';
                     fileInfo.classList.remove('show');
                     submitBtn.disabled = true;
@@ -367,7 +392,7 @@
                     
                     // Показываем сообщение об успехе
                     setTimeout(() => {
-                        alert(`✅ Файл успешно конвертирован!\n📄 Размер: ${result.size} символов`);
+                        alert(`✅ ${result.conversion_type} завершена!\n📄 Файл: ${result.filename}\n📊 Размер: ${formatFileSize(result.size)}`);
                     }, 500);
                 } else {
                     // Ошибка конвертации

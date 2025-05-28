@@ -1,13 +1,15 @@
-# EPUB to Markdown Converter
+# EPUB ⇄ Markdown Converter
 
-A web application for converting EPUB files to clean Markdown format while preserving formatting and removing images and specific tags.
+A web application for bidirectional conversion between EPUB files and Markdown format while preserving formatting and structure.
 
 ## 🚀 Features
 
+- **Bidirectional conversion** - EPUB ↔ Markdown ↔ TXT
 - **Simple web interface** with drag & drop support
+- **Automatic format detection** and conversion direction
 - **Preserves text formatting** (headers, italic, bold, lists)
-- **Automatic cleanup** of images, scripts, and styles
-- **Removes specific HTML tags** for clean text output
+- **Smart chapter creation** from Markdown headers
+- **Automatic cleanup** of images, scripts, and styles (EPUB → Markdown)
 - **Preserves book metadata** (title, author)
 - **Cyrillic and Unicode support**
 - **Modern interface design**
@@ -40,29 +42,43 @@ A web application for converting EPUB files to clean Markdown format while prese
 
 ## 📖 Usage
 
-1. **Upload an EPUB file:**
+1. **Upload a file:**
    - Drag and drop the file into the upload area
    - Or click on the area and select a file
+   - Supported formats: `.epub`, `.md`, `.markdown`, `.txt`
 
-2. **Click "Convert to Markdown"**
+2. **Automatic conversion detection:**
+   - EPUB files → Convert to Markdown
+   - Markdown files → Convert to EPUB
+   - TXT files → Convert to EPUB
 
-3. **Download the ready Markdown file**
+3. **Download the converted file**
 
-## 🔧 What the Converter Does
+## 🔧 Conversion Types
 
-### ✅ Preserves:
-- Text structure (headers, paragraphs)
-- Formatting (bold, italic, underline)
-- Lists (numbered and bulleted)
-- Links (if present)
-- Book metadata
+### 📚 EPUB → 📝 Markdown
+- ✅ Preserves text structure (headers, paragraphs)
+- ✅ Maintains formatting (bold, italic, underline)
+- ✅ Keeps lists (numbered and bulleted)
+- ✅ Preserves links
+- ✅ Extracts metadata
+- ❌ Removes images and media content
+- ❌ Removes CSS styles and JavaScript
+- ❌ Cleans specific HTML attributes
 
-### ❌ Removes:
-- Images and media content
-- CSS styles and JavaScript
-- Specific HTML attributes
-- Extra spaces and line breaks
-- Advertising blocks and navigation
+### 📝 Markdown → 📚 EPUB
+- ✅ Creates chapters from headers (`#` and `##`)
+- ✅ Converts Markdown formatting to HTML
+- ✅ Generates table of contents
+- ✅ Adds proper EPUB structure
+- ✅ Includes CSS styling for readability
+- ✅ Supports code blocks and quotes
+- ✅ Auto-detects title and author from content
+
+### 📄 TXT → 📚 EPUB
+- ✅ Converts plain text to EPUB format
+- ✅ Creates single chapter or splits by paragraphs
+- ✅ Adds basic formatting and structure
 
 ## 📁 Project Structure
 
@@ -71,10 +87,11 @@ epub-to-markdown/
 ├── app.py              # Main Flask application
 ├── requirements.txt    # Python dependencies
 ├── README.md          # Documentation
+├── test_book.md       # Sample Markdown file for testing
 ├── templates/
 │   └── index.html     # Web interface
 ├── uploads/           # Temporary uploaded files
-└── output/            # Ready Markdown files
+└── output/            # Ready converted files
 ```
 
 ## 🔍 Technical Details
@@ -84,14 +101,26 @@ epub-to-markdown/
 - **ebooklib** - EPUB file handling
 - **BeautifulSoup4** - HTML parsing
 - **html2text** - HTML to Markdown conversion
+- **markdown** - Markdown to HTML conversion
+- **python-slugify** - URL-safe string generation
 - **lxml** - XML/HTML parser
 
-### Conversion Algorithm:
+### Conversion Algorithms:
+
+#### EPUB → Markdown:
 1. Reading EPUB file and extracting metadata
 2. Processing all HTML documents in correct order
 3. Cleaning HTML from unnecessary tags and attributes
 4. Converting to Markdown while preserving structure
 5. Additional cleanup and formatting
+
+#### Markdown → EPUB:
+1. Parsing Markdown content and extracting metadata
+2. Splitting content into chapters by headers
+3. Converting Markdown to HTML with extensions
+4. Creating EPUB structure with proper navigation
+5. Adding CSS styles for better readability
+6. Generating table of contents
 
 ## ⚙️ Configuration
 
@@ -99,6 +128,7 @@ In the `app.py` file you can modify:
 
 - **Maximum file size:** `MAX_CONTENT_LENGTH = 16 * 1024 * 1024` (16MB)
 - **Server port:** `port=5000`
+- **Allowed file extensions:** `ALLOWED_EXTENSIONS = {'epub', 'md', 'markdown', 'txt'}`
 - **Allowed HTML attributes:** `allowed_attrs = ['href', 'title']`
 
 ## 🐛 Troubleshooting
@@ -108,29 +138,39 @@ In the `app.py` file you can modify:
 pip install -r requirements.txt
 ```
 
-### EPUB processing error
+### File processing error
 - Make sure the file is not corrupted
-- Verify it's actually an EPUB file
-- Try a different EPUB file
+- Verify the file format is supported
+- Check file size (max 16MB)
+- Try a different file
 
 ### Encoding issues
 - The application supports UTF-8
-- Make sure your EPUB file uses correct encoding
+- Make sure your files use correct encoding
 
 ## 📝 Usage Examples
 
 ### Command line (alternative method):
-If you need to process a file without the web interface, you can use functions directly:
+If you need to process files without the web interface:
 
 ```python
-from app import epub_to_markdown
+from app import epub_to_markdown, markdown_to_epub
+import ebooklib
 
-# Convert file
-markdown_content = epub_to_markdown('path/to/your/book.epub')
-
-# Save result
+# EPUB to Markdown
+markdown_content = epub_to_markdown('path/to/book.epub')
 with open('output.md', 'w', encoding='utf-8') as f:
     f.write(markdown_content)
+
+# Markdown to EPUB
+book = markdown_to_epub('path/to/document.md')
+ebooklib.epub.write_epub('output.epub', book, {})
+```
+
+### Testing with sample file:
+```bash
+# Test Markdown to EPUB conversion
+python test_converter.py test_book.md
 ```
 
 ## 🤝 Contributing
@@ -139,7 +179,7 @@ If you want to improve the project:
 
 1. Fork the repository
 2. Make changes
-3. Test functionality
+3. Test functionality with both conversion directions
 4. Submit a pull request
 
 ## 📄 License
@@ -152,8 +192,9 @@ If you have questions or issues:
 
 1. Check the "Troubleshooting" section
 2. Make sure all dependencies are installed
-3. Check console logs for detailed error information
+3. Test with the provided sample files
+4. Check console logs for detailed error information
 
 ---
 
-**Happy converting! 📚→📝** 
+**Happy converting! 📚⇄📝** 

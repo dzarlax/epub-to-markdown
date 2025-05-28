@@ -8,6 +8,9 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 import html2text
 import re
+import markdown
+from slugify import slugify
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'
@@ -15,7 +18,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'output'
-ALLOWED_EXTENSIONS = {'epub'}
+ALLOWED_EXTENSIONS = {'epub', 'md', 'markdown', 'txt'}
 
 # Создаем необходимые директории
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -94,6 +97,139 @@ def epub_to_markdown(epub_path):
     except Exception as e:
         raise Exception(f"Ошибка при конвертации EPUB: {str(e)}")
 
+def markdown_to_epub(markdown_path, title=None, author=None):
+    """Конвертирует Markdown файл в EPUB"""
+    try:
+        # Читаем Markdown файл
+        with open(markdown_path, 'r', encoding='utf-8') as f:
+            markdown_content = f.read()
+        
+        # Извлекаем метаданные из начала файла, если они есть
+        lines = markdown_content.split('\n')
+        extracted_title = title
+        extracted_author = author
+        
+        # Ищем заголовок и автора в первых строках
+        for i, line in enumerate(lines[:10]):
+            if line.startswith('# ') and not extracted_title:
+                extracted_title = line[2:].strip()
+            elif line.startswith('**Автор:**') or line.startswith('**Author:**'):
+                extracted_author = line.split(':', 1)[1].strip()
+        
+        # Устанавливаем значения по умолчанию
+        if not extracted_title:
+            extracted_title = os.path.splitext(os.path.basename(markdown_path))[0]
+        if not extracted_author:
+            extracted_author = "Неизвестный автор"
+        
+        # Создаем EPUB книгу
+        book = epub.EpubBook()
+        
+        # Устанавливаем метаданные
+        book.set_identifier(f'id-{slugify(extracted_title)}-{datetime.now().strftime("%Y%m%d")}')
+        book.set_title(extracted_title)
+        book.set_language('ru')
+        book.add_author(extracted_author)
+        
+        # Разбиваем контент на главы по заголовкам
+        chapters = []
+        current_chapter = []
+        chapter_title = "Введение"
+        chapter_count = 1
+        
+        for line in lines:
+            if line.startswith('# ') and len(current_chapter) > 0:
+                # Создаем главу из накопленного контента
+                chapter_content = '\n'.join(current_chapter)
+                if chapter_content.strip():
+                    chapters.append((chapter_title, chapter_content))
+                
+                # Начинаем новую главу
+                chapter_title = line[2:].strip()
+                current_chapter = []
+                chapter_count += 1
+            elif line.startswith('## '):
+                # Подзаголовок - тоже может быть главой
+                if len(current_chapter) > 0:
+                    chapter_content = '\n'.join(current_chapter)
+                    if chapter_content.strip():
+                        chapters.append((chapter_title, chapter_content))
+                
+                chapter_title = line[3:].strip()
+                current_chapter = []
+                chapter_count += 1
+            else:
+                current_chapter.append(line)
+        
+        # Добавляем последнюю главу
+        if current_chapter:
+            chapter_content = '\n'.join(current_chapter)
+            if chapter_content.strip():
+                chapters.append((chapter_title, chapter_content))
+        
+        # Если глав нет, создаем одну главу из всего контента
+        if not chapters:
+            chapters = [(extracted_title, markdown_content)]
+        
+        # Создаем главы EPUB
+        epub_chapters = []
+        spine = []
+        
+        for i, (title, content) in enumerate(chapters):
+            # Конвертируем Markdown в HTML
+            html_content = markdown.markdown(content, extensions=['extra', 'codehilite'])
+            
+            # Создаем главу
+            chapter_id = f'chapter_{i+1}'
+            chapter_filename = f'{chapter_id}.xhtml'
+            
+            chapter = epub.EpubHtml(
+                title=title,
+                file_name=chapter_filename,
+                lang='ru'
+            )
+            
+            # Добавляем CSS стили
+            chapter.content = f'''
+            <!DOCTYPE html>
+            <html xmlns="http://www.w3.org/1999/xhtml">
+            <head>
+                <title>{title}</title>
+                <style>
+                    body {{ font-family: serif; line-height: 1.6; margin: 2em; }}
+                    h1, h2, h3 {{ color: #333; margin-top: 2em; }}
+                    p {{ margin: 1em 0; text-align: justify; }}
+                    blockquote {{ margin: 1em 2em; font-style: italic; }}
+                    code {{ background: #f5f5f5; padding: 0.2em 0.4em; }}
+                    pre {{ background: #f5f5f5; padding: 1em; overflow-x: auto; }}
+                </style>
+            </head>
+            <body>
+                {html_content}
+            </body>
+            </html>
+            '''
+            
+            book.add_item(chapter)
+            epub_chapters.append(chapter)
+            spine.append(chapter)
+        
+        # Создаем оглавление
+        book.toc = [(epub.Link(f'{chapter.file_name}', chapter.title, f'chapter_{i+1}'), []) 
+                    for i, chapter in enumerate(epub_chapters)]
+        
+        # Добавляем навигационные файлы
+        book.add_item(epub.EpubNcx())
+        book.add_item(epub.EpubNav())
+        
+        # Устанавливаем порядок чтения
+        book.spine = ['nav'] + spine
+        
+        return book
+    
+    except Exception as e:
+        raise Exception(f"Ошибка при конвертации Markdown: {str(e)}")
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -112,21 +248,30 @@ def upload_file():
     if file and allowed_file(file.filename):
         try:
             filename = secure_filename(file.filename)
-            epub_path = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(epub_path)
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(file_path)
             
-            # Конвертируем в Markdown
-            markdown_content = epub_to_markdown(epub_path)
+            file_ext = filename.rsplit('.', 1)[1].lower()
             
-            # Сохраняем результат
-            output_filename = f"{os.path.splitext(filename)[0]}.md"
-            output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+            if file_ext == 'epub':
+                # EPUB в Markdown
+                markdown_content = epub_to_markdown(file_path)
+                output_filename = f"{os.path.splitext(filename)[0]}.md"
+                output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+                
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(markdown_content)
             
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(markdown_content)
+            elif file_ext in ['md', 'markdown', 'txt']:
+                # Markdown в EPUB
+                book = markdown_to_epub(file_path)
+                output_filename = f"{os.path.splitext(filename)[0]}.epub"
+                output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+                
+                epub.write_epub(output_path, book, {})
             
             # Удаляем загруженный файл
-            os.remove(epub_path)
+            os.remove(file_path)
             
             return send_file(output_path, as_attachment=True, download_name=output_filename)
         
@@ -134,7 +279,7 @@ def upload_file():
             flash(f'Ошибка при обработке файла: {str(e)}')
             return redirect(url_for('index'))
     else:
-        flash('Разрешены только EPUB файлы')
+        flash('Разрешены только EPUB, MD, Markdown и TXT файлы')
         return redirect(url_for('index'))
 
 @app.route('/convert', methods=['POST'])
@@ -150,32 +295,50 @@ def convert_file():
     if file and allowed_file(file.filename):
         try:
             filename = secure_filename(file.filename)
-            epub_path = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(epub_path)
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(file_path)
             
-            # Конвертируем в Markdown
-            markdown_content = epub_to_markdown(epub_path)
+            file_ext = filename.rsplit('.', 1)[1].lower()
             
-            # Сохраняем результат
-            output_filename = f"{os.path.splitext(filename)[0]}.md"
-            output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+            if file_ext == 'epub':
+                # EPUB в Markdown
+                content = epub_to_markdown(file_path)
+                output_filename = f"{os.path.splitext(filename)[0]}.md"
+                output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+                
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                conversion_type = "EPUB → Markdown"
             
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(markdown_content)
+            elif file_ext in ['md', 'markdown', 'txt']:
+                # Markdown в EPUB
+                book = markdown_to_epub(file_path)
+                output_filename = f"{os.path.splitext(filename)[0]}.epub"
+                output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+                
+                epub.write_epub(output_path, book, {})
+                
+                # Получаем размер файла
+                content_size = os.path.getsize(output_path)
+                conversion_type = "Markdown → EPUB"
+            else:
+                return jsonify({'error': 'Неподдерживаемый формат файла'}), 400
             
             # Удаляем загруженный файл
-            os.remove(epub_path)
+            os.remove(file_path)
             
             return jsonify({
                 'success': True,
                 'filename': output_filename,
-                'size': len(markdown_content)
+                'size': content_size if file_ext in ['md', 'markdown', 'txt'] else len(content),
+                'conversion_type': conversion_type
             })
         
         except Exception as e:
             return jsonify({'error': f'Ошибка при обработке файла: {str(e)}'}), 500
     else:
-        return jsonify({'error': 'Разрешены только EPUB файлы'}), 400
+        return jsonify({'error': 'Разрешены только EPUB, MD, Markdown и TXT файлы'}), 400
 
 @app.route('/download/<filename>')
 def download_file(filename):
