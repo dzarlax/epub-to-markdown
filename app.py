@@ -87,6 +87,8 @@ def epub_to_markdown(epub_path):
                 # Дополнительная очистка
                 markdown_text = re.sub(r'\n\s*\n\s*\n', '\n\n', markdown_text)  # Убираем лишние пустые строки
                 markdown_text = re.sub(r'^\s+', '', markdown_text, flags=re.MULTILINE)  # Убираем начальные пробелы
+                # Добавляем удаление текста в квадратных скобках, который может быть сносками
+                markdown_text = re.sub(r'\[.*?\]', '', markdown_text) # Удаляем текст в квадратных скобках, например [1], [текст]
                 
                 if markdown_text.strip():
                     markdown_content.append(markdown_text)
